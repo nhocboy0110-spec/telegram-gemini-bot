@@ -1,5 +1,6 @@
 import os
 import requests
+import urllib.parse
 
 from groq import Groq
 
@@ -40,83 +41,63 @@ MODEL_NAME = "llama-3.3-70b-versatile"
 # =========================================
 
 SYSTEM_PROMPT = """
-Bạn là AI chuyên viết content Facebook về sách.
+Bạn là content creator Facebook chuyên review sách.
 
-Khi người dùng nhập tên sách:
-
-Hãy viết:
-- văn phong cảm xúc
-- truyền cảm hứng
-- có chiều sâu
-- câu mở đầu thu hút
-- kiểu viral Facebook
-- ngắn gọn nhưng cuốn hút
+Mục tiêu:
+- viết cực cuốn
+- tạo cảm xúc
+- văn phong truyền cảm hứng
+- giống bài viết fanpage triệu view
 
 Format:
 
 📚 Tên sách
 
-✨ Một câu hook mở đầu cực cuốn.
+✨ Hook mở đầu thật thu hút.
 
-✍️ Viết 1 đoạn ngắn:
+✍️ Viết đoạn ngắn:
 - giàu cảm xúc
-- có chất văn thơ
-- tạo động lực
-- dễ đăng Facebook
+- văn thơ nhẹ nhàng
+- dễ viral Facebook
 
-🎯 Chủ đề chính:
+🎯 Chủ đề:
 • bullet ngắn
 
-🔥 Một quote thật hay.
+🔥 Một quote cực hay.
 
-📌 Kết bằng câu truyền cảm hứng.
+📌 Kết bằng câu khiến người đọc muốn tìm sách ngay.
 
-Thêm hashtag cuối bài:
+Hashtag:
 #sach
-#reviewsach
 #book
+#reviewsach
 #phattrienbanthan
-
-Quy tắc:
-- xuống dòng đẹp
-- không quá dài
-- giọng văn hiện đại
-- giống content creator Facebook
 """
 
 # =========================================
-# GET BOOK COVER
+# AI IMAGE
 # =========================================
 
-def get_book_cover(book_name):
+def generate_ai_image(book_name):
 
-    try:
+    prompt = f"""
+beautiful cinematic book cover style,
+facebook post,
+reading book,
+warm light,
+coffee table,
+motivational,
+aesthetic,
+book: {book_name}
+"""
 
-        url = f"https://www.googleapis.com/books/v1/volumes?q={book_name}"
+    encoded_prompt = urllib.parse.quote(prompt)
 
-        response = requests.get(url)
+    image_url = (
+        f"https://image.pollinations.ai/prompt/{encoded_prompt}"
+    )
 
-        data = response.json()
-
-        items = data.get("items")
-
-        if not items:
-            return None
-
-        volume_info = items[0]["volumeInfo"]
-
-        image_links = volume_info.get("imageLinks")
-
-        if not image_links:
-            return None
-
-        return image_links.get("thumbnail")
-
-    except Exception as e:
-
-        print("BOOK COVER ERROR:", e)
-
-        return None
+    return image_url
 
 # =========================================
 # START
@@ -125,22 +106,21 @@ def get_book_cover(book_name):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     text = """
-📚 Xin chào!
+📚 Bot review sách AI
 
-Dùng lệnh:
+Dùng:
 
 /sach tên sách
 
 Ví dụ:
-/sach Đắc Nhân Tâm
-/sach Nhà Giả Kim
 /sach Atomic Habits
+/sach Nhà Giả Kim
 """
 
     await update.message.reply_text(text)
 
 # =========================================
-# SACH COMMAND
+# /SACH
 # =========================================
 
 async def sach(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -148,12 +128,11 @@ async def sach(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
 
         await update.message.reply_text(
-            "❌ Vui lòng nhập tên sách.\n\nVí dụ:\n/sach Atomic Habits"
+            "❌ Ví dụ:\n/sach Atomic Habits"
         )
 
         return
 
-    # lấy tên sách
     book_name = " ".join(context.args)
 
     try:
@@ -164,7 +143,7 @@ async def sach(update: Update, context: ContextTypes.DEFAULT_TYPE):
             action=ChatAction.TYPING
         )
 
-        # AI generate
+        # AI content
         completion = client.chat.completions.create(
             model=MODEL_NAME,
             messages=[
@@ -177,39 +156,27 @@ async def sach(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "content": book_name
                 }
             ],
-            temperature=0.9,
+            temperature=0.95,
             max_tokens=900
         )
 
         reply = completion.choices[0].message.content
 
-        # image
-        image_url = get_book_cover(book_name)
+        # AI image
+        image_url = generate_ai_image(book_name)
 
-        # gửi ảnh + caption
-        if image_url:
+        # send photo
+        await update.message.reply_photo(
+            photo=image_url,
+            caption=reply[:1024]
+        )
 
-            await update.message.reply_photo(
-                photo=image_url,
-                caption=reply[:1024]
+        # nếu caption dài
+        if len(reply) > 1024:
+
+            await update.message.reply_text(
+                reply[1024:]
             )
-
-            # nếu caption dài
-            if len(reply) > 1024:
-
-                await update.message.reply_text(
-                    reply[1024:]
-                )
-
-        else:
-
-            MAX_LENGTH = 4000
-
-            for i in range(0, len(reply), MAX_LENGTH):
-
-                chunk = reply[i:i + MAX_LENGTH]
-
-                await update.message.reply_text(chunk)
 
     except Exception as e:
 
@@ -227,7 +194,6 @@ def main():
 
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    # commands
     app.add_handler(
         CommandHandler("start", start)
     )
@@ -236,7 +202,7 @@ def main():
         CommandHandler("sach", sach)
     )
 
-    print("🤖 Bot sách đang chạy...")
+    print("🤖 Bot AI sách đang chạy...")
 
     app.run_polling()
 
