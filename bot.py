@@ -9,9 +9,7 @@ from telegram.constants import ChatAction
 from telegram.ext import (
     ApplicationBuilder,
     ContextTypes,
-    CommandHandler,
-    MessageHandler,
-    filters
+    CommandHandler
 )
 
 # =========================================
@@ -42,33 +40,48 @@ MODEL_NAME = "llama-3.3-70b-versatile"
 # =========================================
 
 SYSTEM_PROMPT = """
-Bạn là AI chuyên viết nội dung Facebook về sách.
+Bạn là AI chuyên viết content Facebook về sách.
 
 Khi người dùng nhập tên sách:
 
-Hãy viết theo format:
+Hãy viết:
+- văn phong cảm xúc
+- truyền cảm hứng
+- có chiều sâu
+- câu mở đầu thu hút
+- kiểu viral Facebook
+- ngắn gọn nhưng cuốn hút
+
+Format:
 
 📚 Tên sách
 
-✍️ Giới thiệu ngắn:
-- 2 đến 4 câu
-- dễ đọc
-- súc tích
-- truyền cảm hứng
+✨ Một câu hook mở đầu cực cuốn.
+
+✍️ Viết 1 đoạn ngắn:
+- giàu cảm xúc
+- có chất văn thơ
+- tạo động lực
+- dễ đăng Facebook
 
 🎯 Chủ đề chính:
-- bullet ngắn gọn
+• bullet ngắn
 
-🔥 Một câu quote nổi bật.
+🔥 Một quote thật hay.
 
-#sach #book #phattrienbanthan
+📌 Kết bằng câu truyền cảm hứng.
+
+Thêm hashtag cuối bài:
+#sach
+#reviewsach
+#book
+#phattrienbanthan
 
 Quy tắc:
-- Viết tiếng Việt
-- Ngắn gọn
-- Xuống dòng đẹp
-- Hợp đăng Facebook
-- Không quá dài
+- xuống dòng đẹp
+- không quá dài
+- giọng văn hiện đại
+- giống content creator Facebook
 """
 
 # =========================================
@@ -97,9 +110,7 @@ def get_book_cover(book_name):
         if not image_links:
             return None
 
-        thumbnail = image_links.get("thumbnail")
-
-        return thumbnail
+        return image_links.get("thumbnail")
 
     except Exception as e:
 
@@ -116,26 +127,34 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = """
 📚 Xin chào!
 
-Hãy gửi tên một quyển sách.
+Dùng lệnh:
+
+/sach tên sách
 
 Ví dụ:
-- Đắc Nhân Tâm
-- Nhà Giả Kim
-- Atomic Habits
+/sach Đắc Nhân Tâm
+/sach Nhà Giả Kim
+/sach Atomic Habits
 """
 
     await update.message.reply_text(text)
 
 # =========================================
-# CHAT
+# SACH COMMAND
 # =========================================
 
-async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def sach(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    user_text = update.message.text
+    if not context.args:
 
-    if not user_text:
+        await update.message.reply_text(
+            "❌ Vui lòng nhập tên sách.\n\nVí dụ:\n/sach Atomic Habits"
+        )
+
         return
+
+    # lấy tên sách
+    book_name = " ".join(context.args)
 
     try:
 
@@ -145,7 +164,7 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
             action=ChatAction.TYPING
         )
 
-        # AI response
+        # AI generate
         completion = client.chat.completions.create(
             model=MODEL_NAME,
             messages=[
@@ -155,19 +174,19 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 },
                 {
                     "role": "user",
-                    "content": user_text
+                    "content": book_name
                 }
             ],
-            temperature=0.7,
-            max_tokens=700
+            temperature=0.9,
+            max_tokens=900
         )
 
         reply = completion.choices[0].message.content
 
-        # get image
-        image_url = get_book_cover(user_text)
+        # image
+        image_url = get_book_cover(book_name)
 
-        # send image + caption
+        # gửi ảnh + caption
         if image_url:
 
             await update.message.reply_photo(
@@ -175,9 +194,22 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 caption=reply[:1024]
             )
 
+            # nếu caption dài
+            if len(reply) > 1024:
+
+                await update.message.reply_text(
+                    reply[1024:]
+                )
+
         else:
 
-            await update.message.reply_text(reply)
+            MAX_LENGTH = 4000
+
+            for i in range(0, len(reply), MAX_LENGTH):
+
+                chunk = reply[i:i + MAX_LENGTH]
+
+                await update.message.reply_text(chunk)
 
     except Exception as e:
 
@@ -195,15 +227,13 @@ def main():
 
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
+    # commands
     app.add_handler(
         CommandHandler("start", start)
     )
 
     app.add_handler(
-        MessageHandler(
-            filters.TEXT & ~filters.COMMAND,
-            chat
-        )
+        CommandHandler("sach", sach)
     )
 
     print("🤖 Bot sách đang chạy...")
