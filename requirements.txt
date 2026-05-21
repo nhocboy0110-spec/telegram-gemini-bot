@@ -1,2 +1,3 @@
-mkdir telegram-gemini-bot
-cd telegram-gemini-bot
+python-telegram-bot
+google-generativeai
+requests
