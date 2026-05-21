@@ -1,67 +1,48 @@
 import os
-import google.generativeai as genai
+
+from groq import Groq
 
 from telegram import Update
 from telegram.constants import ChatAction
+
 from telegram.ext import (
     ApplicationBuilder,
     ContextTypes,
-    MessageHandler,
     CommandHandler,
+    MessageHandler,
     filters
 )
 
-# =========================
+# ======================
 # ENV
-# =========================
+# ======================
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
-if not BOT_TOKEN:
-    raise ValueError("Thiếu BOT_TOKEN")
+# ======================
+# GROQ
+# ======================
 
-if not GEMINI_API_KEY:
-    raise ValueError("Thiếu GEMINI_API_KEY")
-
-# =========================
-# GEMINI SETUP
-# =========================
-
-genai.configure(api_key=GEMINI_API_KEY)
-
-model = genai.GenerativeModel(
-    model_name="gemini-2.0-flash",
-    system_instruction="""
-Bạn là Vạn Trí AI - trợ lý AI tiếng Việt.
-
-Quy tắc:
-- Trả lời tự nhiên
-- Ngắn gọn dễ hiểu
-- Hữu ích
-- Không spam emoji
-- Ưu tiên tiếng Việt
-"""
+client = Groq(
+    api_key=GROQ_API_KEY
 )
 
-# =========================
-# START COMMAND
-# =========================
+MODEL_NAME = "llama-3.3-70b-versatile"
+
+# ======================
+# START
+# ======================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    text = """
-🤖 Xin chào!
+    await update.message.reply_text(
+        "🤖 Xin chào!\nTôi là AI Bot."
+    )
 
-Tôi là Vạn Trí AI Bot.
-Bạn hãy gửi tin nhắn để bắt đầu chat.
-"""
-
-    await update.message.reply_text(text)
-
-# =========================
-# CHAT FUNCTION
-# =========================
+# ======================
+# CHAT
+# ======================
 
 async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
@@ -69,63 +50,51 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
 
-        # typing...
         await context.bot.send_chat_action(
             chat_id=update.effective_chat.id,
             action=ChatAction.TYPING
         )
 
-        response = model.generate_content(user_text)
+        completion = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=[
+                {
+                    "role": "system",
+                    "content": "Bạn là trợ lý AI tiếng Việt thân thiện."
+                },
+                {
+                    "role": "user",
+                    "content": user_text
+                }
+            ],
+            temperature=0.7,
+            max_tokens=1024
+        )
 
-        reply = response.text
+        reply = completion.choices[0].message.content
 
         if not reply:
-            reply = "Tôi chưa có câu trả lời."
+            reply = "Không có phản hồi."
 
-        # Telegram giới hạn 4096 ký tự
         MAX_LENGTH = 4000
 
         for i in range(0, len(reply), MAX_LENGTH):
+
             chunk = reply[i:i + MAX_LENGTH]
 
             await update.message.reply_text(chunk)
 
     except Exception as e:
 
-        error_text = str(e)
+        print(e)
 
-        print("ERROR:", error_text)
+        await update.message.reply_text(
+            f"⚠️ Lỗi:\n{str(e)}"
+        )
 
-        # quota
-        if "429" in error_text:
-            await update.message.reply_text(
-                "⚠️ Gemini đang quá tải hoặc bạn đã hết quota free."
-            )
-
-        # model lỗi
-        elif "not found" in error_text.lower():
-
-            await update.message.reply_text(
-                "⚠️ Model Gemini không tồn tại.\n"
-                "Hãy kiểm tra model_name."
-            )
-
-        # api key
-        elif "api key" in error_text.lower():
-
-            await update.message.reply_text(
-                "⚠️ API KEY Gemini không hợp lệ."
-            )
-
-        else:
-
-            await update.message.reply_text(
-                f"⚠️ Có lỗi xảy ra:\n{error_text}"
-            )
-
-# =========================
+# ======================
 # MAIN
-# =========================
+# ======================
 
 def main():
 
@@ -146,7 +115,7 @@ def main():
 
     app.run_polling()
 
-# =========================
+# ======================
 
 if __name__ == "__main__":
     main()
